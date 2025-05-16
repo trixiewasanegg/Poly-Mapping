@@ -1,92 +1,112 @@
 # Imports
 from dash import Dash, html, callback, Input, Output
 import dash_cytoscape as cyto
+import json
 
-testDataFile = "TestData-Simple.csv"
-testStyleFile = "TestStyles-Simple.csv"
-testNodeFile = "TestNodes-Simple.csv"
+#######################################
+# Boilerplate functions
+#######################################
 
-nodes = []
-with open(testNodeFile) as csv:
-    lines = csv.readlines()
-    for line in lines[1:]:
-        vals = line.replace('\n','').split(",")
-        node = {'data': {'id': vals[0],'label': vals[0],'classes': vals[1]}}
-        if str(vals[2]) != 'None':
-            node['data']['parent'] = vals[2]
+# Transforms incoming string into base 10
+# Used to generate unique IDs for edges
+def base26_to_base10(base26):
+    base10_val = 0
+    for i, char in enumerate(reversed(base26)):
+        base10_val  += (ord(char.upper()) - ord('A') + 1) * (26 ** i)
+    return base10_val
 
-        nodes.append(node)
+# Transforms input JSON into cytoscape node notation
+def JSONToNode(jsonIn):
+    node = {'id':jsonIn['id'],'label': jsonIn['name'], 'color': jsonIn['hex']}
+    return node
 
+# Transforms input JSON into cytoscape edge notation
+def JSONToEdge(source,links,colors):
+    srcVal = base26_to_base10(source)
+    edgeTuples = []
+    for link in links:
+        dest = link[0]
+        destVal = base26_to_base10(dest)
+        relType = link[1]
+        relHex = colors[relType]
+        edgeID = hex(srcVal + destVal)[2:]
+        edge = {'data': {'id': edgeID, 'source': source, 'target': dest, 'label': relType, 'color': relHex}, 'classes': relType}
+        edgeTuples.append((edgeID,edge))
+    return edgeTuples
 
-links = []
+#######################################
+# JSON Input & Transformation
+#######################################
+
+# Load Source JSON File
+sourceFile = "TestData.json"
+with open(sourceFile) as file:
+    data = json.load(file)
+
+# Reads JSON data, adds elements to a list for later use
+elements = []
+edgeDict = dict()
 nodeConnections = dict()
 
-# Reads CSV
-with open(testDataFile) as csv:
-    lines = csv.readlines()
-    for line in lines[1:]:
-        vals = line.replace('\n','').split(",")
-        edgeID = vals[0]
-        node1 = vals[1]
-        node2 = vals[2]
-        relType = vals[3]
-        link = {'id': edgeID,'node1': node1, 'node2': node2, 'relType': relType}
-        links.append(link)
-        try:
-            nodeConnections[node1].add(edgeID)
-        except:
-            nodeConnections[node1] = set()
-            nodeConnections[node1].add(edgeID)
-        
-        try:
-            nodeConnections[node2].add(edgeID)
-        except:
-            nodeConnections[node2] = set()
-            nodeConnections[node2].add(edgeID)
+for group in data["groups"]:
+    node = JSONToNode(group)
+    node['classes'] = 'group'
+    node['shortDesc'] = group['shortDesc']
+    elements.append({'data': node})
 
-nodeSize = 20
+for person in data["people"]:
+    person['id'] = person['name']
+    node = JSONToNode(person)
+    if person['group'] != "":
+        node['parent'] = person['group']
+    node['classes'] = "person"
 
+    elements.append({'data': node})
+    relations = JSONToEdge(person['name'],person['links'], data['relColors'])
+    relIDs = []
+    for edge in relations:
+        relIDs.append(edge[0])
+        if not edge[0] in edgeDict.keys():
+            edgeDict[edge[0]] = [person['id'],edge[1]['data']['target']]
+            elements.append(edge[1])
+    nodeConnections[person['name']] = relIDs
+
+# Loads some pre-set style values & misc metadata
+meta = data['meta']
+mapName = meta['mapName']
+nodeSize = meta['nodeSize']
+algo = meta['algo']
+selectCol = meta['selectedColor']
+
+# Sets pre-set styles to static variable for callbacks
 stylePredef = [
-    {'selector': 'node', 'style': {'content': 'data(label)', 'z-index': 999, 'width': nodeSize, 'height': nodeSize}},
-    {'selector': 'edge', 'style': {'curve-style': 'round-segments', 'width': 2}},
-    {'selector': 'edge:selected', 'style': {'content': 'data(label)', 'width': 5}}
+    {'selector': 'node', 'style': {'content': 'data(label)', 'width': nodeSize, 'height': nodeSize, 'background-color': 'data(color)'}},
+    {'selector': 'edge', 'style': {'curve-style': 'round-segments', 'width': 2, 'line-color': 'data(color)'}}
 ]
-
-with open(testStyleFile) as csv:
-    lines = csv.readlines()
-    for line in lines[1:]:
-        vals = line.replace('\n','').split(",")
-        style = {'selector': '.'+vals[0], 'style': {'line-color': "#"+vals[1],'background-color': "#"+vals[1]}}
-        stylePredef.append(style)
 
 styles = stylePredef
 
-# Pulls from links & nodes, generates cytoscape elements
-cytoscapeElements = nodes
-
-for link in links:
-    element = {'data': {'id': link['id'],'source': link['node1'], 'target': link['node2'], 'label': link['relType']}, 'classes': link['relType']}
-    cytoscapeElements.append(element)
-
-app = Dash()
-
+#######################################
+# Dash app loading
+#######################################
 cyto.load_extra_layouts()
+app = Dash()
 
 app.layout = html.Div([
     cyto.Cytoscape(
-        id='primaryMap',
-        elements=cytoscapeElements,
+        id=mapName,
+        elements=elements,
         responsive=True,
-        layout={'name': 'dagre', 'fit': True, 'nodeSep': 200},
+        layout={'name': algo, 'fit': True, 'nodeSep': 200},
         style={'width': '100vw', 'height': '100vh'},
         stylesheet = styles,
     )
 ])
 
 @callback(
-    Output("primaryMap", "stylesheet",allow_duplicate=True),
-    Input("primaryMap", "selectedNodeData"),
-    Input("primaryMap", "selectedEdgeData"),
+    Output(mapName, "stylesheet"),
+    Input(mapName, "selectedNodeData"),
+    Input(mapName, "selectedEdgeData"),
     prevent_initial_call=True,
 )
 def selectNode(nodes, edges):
@@ -94,23 +114,31 @@ def selectNode(nodes, edges):
     newStyles = []
     if nodes != [] and nodes != None:
         for node in nodes:
-            if node['classes'] == 'Group':
+            if node['classes'] == 'group':
                 return stylePredef
             else:
                 key = node['id']
+                newStyles.append({'selector': '#'+key, 'style': {'background-color': selectCol}})
                 connections = nodeConnections[key]
                 print(f'Connections: {connections}')
                 
                 for con in connections:
                     newStyles.append({'selector': '#'+con, 'style': {'width': 5, 'content': 'data(label)'}})
+                    linked = edgeDict[con]
+                    if linked[0] != key:
+                        newStyles.append({'selector': "#"+linked[0], 'style': {'background-color': selectCol}})
+                    else:
+                        newStyles.append({'selector': "#"+linked[1], 'style': {'background-color': selectCol}})
+
+
 
     print(f"Edge/s selected: {edges}")
-    largeNode = nodeSize * 1.25
     if edges != [] and edges != None:
         for edge in edges:
+            newStyles.append({'selector': "#"+edge['id'], 'style': {'width': 5, 'content': 'data(label)'}})
             for node in [edge['source'], edge['target']]:
                 newStyles.append(
-                    {'selector': "#"+node, 'style': {'width': largeNode, 'height': largeNode}}
+                    {'selector': "#"+node, 'style': {'background-color': selectCol}}
                 )
 
     return stylePredef + newStyles
