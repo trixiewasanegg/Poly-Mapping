@@ -116,7 +116,7 @@ app.layout = html.Div([
         layout={'name': algo, 'fit': True, 'nodeSep': 200},
         style={'width': '100vw', 'height': '100vh'},
         stylesheet = styles,
-    ),
+    )
 ])
 
 @callback(
