@@ -16,30 +16,25 @@ def base26_to_base10(base26):
     return base10_val
 
 # Transforms input JSON into cytoscape node notation
-def JSONToNode(jsonIn):
+def nodeFormat(jsonIn):
     node = {'id':jsonIn['id'],'label': jsonIn['name'], 'color': jsonIn['hex']}
     return node
 
-# Transforms input JSON into cytoscape edge notation
-def JSONToEdge(source,links,colors):
+# Transforms input into cytoscape edge notation
+def edgeFormat(source,dest,relType,colors):
     srcVal = base26_to_base10(source)
-    edgeTuples = []
-    for link in links:
-        dest = link[0]
-        destVal = base26_to_base10(dest)
-        relType = link[1]
-        relHex = colors[relType]
-        edgeID = hex(srcVal + destVal)[2:]
-        edge = {'data': {'id': edgeID, 'source': source, 'target': dest, 'label': relType, 'color': relHex}, 'classes': relType}
-        edgeTuples.append((edgeID,edge))
-    return edgeTuples
+    destVal = base26_to_base10(dest)
+    edgeID = hex(srcVal + destVal)[2:]
+    relHex = colors[relType]
+    edge = {'data': {'id': edgeID, 'source': source, 'target': dest, 'label': relType, 'color': relHex, 'classes': ["edge", relType]}}
+    return (edgeID,edge)
 
 #######################################
 # JSON Input & Transformation
 #######################################
 
 # Load Source JSON File
-sourceFile = "TestData.json"
+sourceFile = "source.json"
 with open(sourceFile) as file:
     data = json.load(file)
 
@@ -48,28 +43,47 @@ elements = []
 edgeDict = dict()
 nodeConnections = dict()
 
+# Reads data for groups
 for group in data["groups"]:
-    node = JSONToNode(group)
-    node['classes'] = 'group'
+    node = nodeFormat(group)
+    node['classes'] = ['group']
     node['shortDesc'] = group['shortDesc']
     elements.append({'data': node})
 
+# Reads data for gorups
 for person in data["people"]:
     person['id'] = person['name']
-    node = JSONToNode(person)
+    node = nodeFormat(person)
     if person['group'] != "":
         node['parent'] = person['group']
-    node['classes'] = "person"
-
+    node['classes'] = ["person"]
     elements.append({'data': node})
-    relations = JSONToEdge(person['name'],person['links'], data['relColors'])
-    relIDs = []
-    for edge in relations:
-        relIDs.append(edge[0])
-        if not edge[0] in edgeDict.keys():
-            edgeDict[edge[0]] = [person['id'],edge[1]['data']['target']]
-            elements.append(edge[1])
-    nodeConnections[person['name']] = relIDs
+
+# Reads data for links
+for link in data["links"]:
+    source = link["source"]
+    dest = link["dest"]
+    relType = link["relType"]
+
+    # Transforms to formatted edge & generates edgeID
+    edgeTuple = edgeFormat(source,dest,relType,data['relColors'])
+    edgeID = edgeTuple[0]
+    edge = edgeTuple[1]
+
+    # adds data to NodeConnections
+    for person in [source,dest]:
+        if person in nodeConnections.keys():
+            connections = nodeConnections[person]
+            connections.append(edgeID)
+            nodeConnections[person] = connections
+        else:
+            nodeConnections[person] = list([edgeID])
+
+    # adds edge to edgeDict
+    edgeDict[edgeID] = [source,dest]
+
+    # adds edge to elements
+    elements.append(edge)
 
 # Loads some pre-set style values & misc metadata
 meta = data['meta']
@@ -114,7 +128,7 @@ def selectNode(nodes, edges):
     newStyles = []
     if nodes != [] and nodes != None:
         for node in nodes:
-            if node['classes'] == 'group':
+            if 'group' in node['classes']:
                 return stylePredef
             else:
                 key = node['id']
