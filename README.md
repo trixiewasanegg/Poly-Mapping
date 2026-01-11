@@ -17,8 +17,12 @@ Pip managed:
 - algo - what algorithm Cytoscapes should plot with (str)
 - selectedColor - what color nodes should turn when selected (Hex with leading # as str)
 
-## relColors - dict
-- Key/Value pairs of relationship types & their respective Hex with leading # as str
+## relColors - dict of dicts
+key is the name of the relationship type.
+Values within each dict:
+- hex - color (Hex with leading # as str)
+- style - solid/dashed (str)
+- width - line width (int)
 
 ## groups - list of dicts
 Each dict should have:

@@ -21,12 +21,14 @@ def nodeFormat(jsonIn):
     return node
 
 # Transforms input into cytoscape edge notation
-def edgeFormat(source,dest,relType,colors):
+def edgeFormat(source,dest,relType,relData):
     srcVal = base26_to_base10(source)
     destVal = base26_to_base10(dest)
     edgeID = hex(srcVal + destVal)[2:]
-    relHex = colors[relType]
-    edge = {'data': {'id': edgeID, 'source': source, 'target': dest, 'label': relType, 'color': relHex, 'classes': ["edge", relType]}}
+    relHex = relData["hex"]
+    relStyle = relData["style"]
+    relWidth = relData["width"]
+    edge = {'data': {'id': edgeID, 'source': source, 'target': dest, 'label': relType, 'color': relHex, 'lineStyle': relStyle, 'width': relWidth, 'classes': ["edge", relType]}}
     return (edgeID,edge)
 
 #######################################
@@ -66,7 +68,7 @@ for link in data["links"]:
     relType = link["relType"]
 
     # Transforms to formatted edge & generates edgeID
-    edgeTuple = edgeFormat(source,dest,relType,data['relColors'])
+    edgeTuple = edgeFormat(source,dest,relType,data['relColors'][relType])
     edgeID = edgeTuple[0]
     edge = edgeTuple[1]
 
@@ -95,7 +97,7 @@ selectCol = meta['selectedColor']
 # Sets pre-set styles to static variable for callbacks
 stylePredef = [
     {'selector': 'node', 'style': {'content': 'data(label)', 'width': nodeSize, 'height': nodeSize, 'background-color': 'data(color)'}},
-    {'selector': 'edge', 'style': {'curve-style': 'round-segments', 'width': 2, 'line-color': 'data(color)'}}
+    {'selector': 'edge', 'style': {'curve-style': 'round-segments', 'width': 'data(width)','line-style': 'data(lineStyle)', 'line-color': 'data(color)'}}
 ]
 
 styles = stylePredef
@@ -114,7 +116,7 @@ app.layout = html.Div([
         layout={'name': algo, 'fit': True, 'nodeSep': 200},
         style={'width': '100vw', 'height': '100vh'},
         stylesheet = styles,
-    )
+    ),
 ])
 
 @callback(
