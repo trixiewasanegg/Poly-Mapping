@@ -176,3 +176,4 @@ cython_debug/
 
 # Test Data
 Test*.*
+source.json
